@@ -1,0 +1,41 @@
+{
+  "format": "octra-hfhe-challenge-v1",
+  "status": "active",
+  "network": "octra-mainnet",
+  "funded_wallet": {
+    "address": "oct6Y7jxx92V5nuUykotRqHj6xPz1JEiT3ZRswJ4Awvi9Zn",
+    "initial_funding_oct": "500000",
+    "funding_transaction": "4d597770acef403a9bc3bb555e962c00b749247139605737b71f97d09c5b0370"
+  },
+  "encrypted_plaintext": {
+    "type": "octra-wallet-mnemonic",
+    "plaintext_bytes": 79,
+    "cipher_objects": 7
+  },
+  "cryptography": {
+    "implementation": "pvac-hfhe-cpp",
+    "repository": "https://github.com/octra-labs/pvac_hfhe_cpp",
+    "commit": "e2835df34ebbc510d3f8c93062dc5bf5bc34d2dc",
+    "field": "2^127-1",
+    "parameter_B": 337,
+    "H_dimensions": {
+      "rows": 8192,
+      "columns": 16384
+    }
+  },
+  "public_artifacts": {
+    "ciphertext": "seed.ct",
+    "public_key": "pk.bin",
+    "parameters": "params.json"
+  },
+  "private_artifacts_not_published": [
+    "sk.bin",
+    "wallet mnemonic",
+    "wallet files"
+  ],
+  "winning_condition": "Recover the mnemonic encrypted in seed.ct and use it to submit a valid transaction from the funded wallet before the challenge is withdrawn.",
+  "notes": [
+    "The mnemonic is encrypted directly using the pinned PVAC-HFHE implementation.",
+    "There is no passphrase, PBKDF2, AES, sealed Circle envelope, or additional encryption layer."
+  ]
+}
