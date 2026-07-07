@@ -1,28 +1,25 @@
-# hfhe challenge
+# HFHE challenge
 
-This wallet holds 500,000 OCT:
+> status: paused
 
-`oct6Y7jxx92V5nuUykotRqHj6xPz1JEiT3ZRswJ4Awvi9Zn`
+This challenge is no longer active.
 
-Funding transaction:
+The original challenge used the directly exposed proof-of-concept text-encryption path. It has been paused while the challenge construction is revised.
 
-`4d597770acef403a9bc3bb555e962c00b749247139605737b71f97d09c5b0370`
+The wallet binding, transaction details, and active bounty condition have been removed from the current version of this repository.
 
-The wallet mnemonic was encrypted directly using the pinned `pvac_hfhe_cpp` implementation.
+The published cryptographic artifacts and generation source remain available for reproducibility and analysis.
 
-public files:
+## public artifacts
 
-- `seed.ct`: the encrypted wallet mnemonic
-- `pk.bin`: the public HFHE key material
+- `seed.ct`: encrypted challenge plaintext
+- `pk.bin`: public HFHE key material
 - `params.json`: encryption parameters
 - `manifest.json`: challenge metadata
-- `SHA256SUMS`: hashes of all published artifacts
-- `source/`: the exact artifact generation and serialization source
+- `pvac_commit.txt`: exact `pvac_hfhe_cpp` commit used
+- `SHA256SUMS`: hashes of the published files
+- `source/`: artifact generation and serialization source
 
-There is no passphrase, PBKDF2, AES-GCM, sealed storage envelope, or additional encryption layer protecting the mnemonic.
+## status
 
-No recrypt, Rku, NatKey, eval key, or reset material is published.
-
-The winning condition is simple: recover the mnemonic encrypted in `seed.ct` and use it to submit a valid transaction from the funded wallet before the challenge is withdrawn.
-
-The secret key and plaintext mnemonic are not published.
+Paused. A revised challenge will be published separately.
