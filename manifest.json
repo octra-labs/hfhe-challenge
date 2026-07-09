@@ -1,6 +1,6 @@
 {
   "format": "octra-hfhe-bounty-v2",
-  "status": "pre-release",
+  "status": "active",
   "network": "octra-mainnet",
   "reward_oct": 500000,
   "encrypted_plaintext": {
