@@ -2,7 +2,7 @@
 
 This is the second version of the challenge. The first version was canceled because the public artifact included an unnecessary `R_com` commitment. That commitment allowed structured plaintext guesses to be checked offline, creating an unintended verification oracle. This issue has been removed in v2.
 
-The task is to recover the plaintext encryption path using the provided binary artifact, `secret.ct`. This file contains a private key and metadata associated with the address `octC5eR9pLGKbpzTbDgHowkFt8HW7LZYb2gzehzxHamxuAZ`.
+The task is to recover the plaintext from `secret.ct`. This file contains a private key and metadata associated with the address `octC5eR9pLGKbpzTbDgHowkFt8HW7LZYb2gzehzxHamxuAZ`.
 
 No additional information is provided. If recovery is successful, the Octra web client can be used to access the wallet and claim the reward of 500,000 oct. The solver may also contact `dev@octra.org` to receive an additional 500,000 oct, for a total of 1,000,000 oct, or the equivalent amount in USDC.
 
