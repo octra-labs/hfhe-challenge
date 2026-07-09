@@ -4,9 +4,7 @@
   "network": "octra-mainnet",
   "reward_oct": 500000,
   "encrypted_plaintext": {
-    "type": "report-email-and-secret-string",
-    "plaintext_bytes": 110,
-    "cipher_objects": 9
+    "type": "bounty-payload"
   },
   "cryptography": {
     "implementation": "pvac-hfhe-cpp",
@@ -25,11 +23,5 @@
     "public_key": "pk.bin",
     "parameters": "params.json"
   },
-  "private_artifacts_not_published": [
-    "sk.bin",
-    "plaintext.txt",
-    "private decryption key",
-    "private plaintext"
-  ],
-  "winning_condition": "recover plaintext from secret.ct using public files only; send the secret string and reproducible attack report to the recovered email"
+  "winning_condition": "recover plaintext from secret.ct using public files only; follow the recovered instructions"
 }

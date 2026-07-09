@@ -1,10 +1,8 @@
 {
   "format": "octra-hfhe-bounty-v2",
-  "text_encoding": "length-cipher-plus-wrapped-15-byte-blocks",
+  "text_encoding": "pvac-text-wrapped",
   "pubkey_encoding": "pvac-v3-compressed",
   "cipher_encoding": "pvac-v3-length-prefixed-bundle",
-  "plaintext_bytes": 110,
-  "cipher_objects": 9,
   "h_dimensions": {
     "rows": 8192,
     "columns": 16384

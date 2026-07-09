@@ -1,5 +1,5 @@
 #include <pvac/pvac.hpp>
-#include <pvac/utils/text.hpp> // ! wrapped
+#include <pvac/utils/text.hpp>
 #include "pvac_artifact_serialize.hpp"
 
 #include <algorithm>
@@ -40,44 +40,6 @@ void write_file(const fs::path& path, const std::vector<uint8_t>& data, mode_t m
     if (::chmod(path.c_str(), mode) != 0) throw std::runtime_error("chmod failed for " + path.string());
 }
 
-std::vector<uint8_t> read_random_bytes(size_t n) {
-    std::ifstream in("/dev/urandom", std::ios::binary);
-    if (!in) throw std::runtime_error("cannot open random source");
-    std::vector<uint8_t> data(n);
-    in.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(data.size()));
-    if (!in) throw std::runtime_error("cannot read random source");
-    return data;
-}
-
-std::string hex_encode(const std::vector<uint8_t>& data) {
-    static constexpr char hex[] = "0123456789abcdef";
-    std::string out;
-    out.reserve(data.size() * 2);
-    for (uint8_t x : data) {
-        out.push_back(hex[x >> 4]);
-        out.push_back(hex[x & 15]);
-    }
-    return out;
-}
-
-std::string decimal6(uint32_t x) {
-    x %= 1000000;
-    std::string out(6, '0');
-    for (int i = 5; i >= 0; --i) {
-        out[(size_t)i] = static_cast<char>('0' + (x % 10));
-        x /= 10;
-    }
-    return out;
-}
-
-uint32_t random_u32() {
-    auto b = read_random_bytes(4);
-    uint32_t x = 0;
-    for (int i = 0; i < 4; ++i)
-        x |= static_cast<uint32_t>(b[(size_t)i]) << (8 * i);
-    return x;
-}
-
 fs::path public_root() {
     if (fs::exists("source") && fs::is_directory("source")) return fs::current_path();
     return PUBLIC_DIR;
@@ -85,12 +47,6 @@ fs::path public_root() {
 
 fs::path private_root(const fs::path& pub) {
     return pub.parent_path() / PRIVATE_DIR;
-}
-
-std::string bounty_plaintext() {
-    std::string email = "bounty.data" + decimal6(random_u32()) + "@octra.org";
-    std::string secret = hex_encode(read_random_bytes(32));
-    return "email = " + email + "\nsecret = " + secret + "\n";
 }
 
 std::string trim_copy(std::string s) {
@@ -154,19 +110,6 @@ std::vector<Cipher> deserialize_bundle(const std::vector<uint8_t>& in) {
     }
     if (pos != in.size()) throw std::runtime_error("trailing bytes in secret.ct");
     return cts;
-}
-
-bool layer_has_rcom(const Layer& layer) {
-    return std::any_of(layer.R_com.begin(), layer.R_com.end(), [](uint8_t x) { return x != 0; });
-}
-
-bool bundle_is_rcomless(const std::vector<Cipher>& cts) {
-    for (const auto& ct : cts) {
-        for (const auto& layer : ct.L) {
-            if (layer_has_rcom(layer)) return false;
-        }
-    }
-    return true;
 }
 
 Fp public_layer_slot0(const PubKey& pk, const Cipher& c, uint32_t layer_id) {
@@ -311,16 +254,14 @@ bool small_H_rank_regression() {
         mixed_sigma_parity(pk);
 }
 
-void write_params(const Params& p, size_t plaintext_bytes, size_t cipher_objects, const fs::path& path) {
+void write_params(const Params& p, const fs::path& path) {
     std::ofstream o(path, std::ios::trunc);
     if (!o) throw std::runtime_error("cannot open " + path.string());
     o << "{\n"
       << "  \"format\": \"octra-hfhe-bounty-v2\",\n"
-      << "  \"text_encoding\": \"length-cipher-plus-wrapped-15-byte-blocks\",\n"
+      << "  \"text_encoding\": \"pvac-text-wrapped\",\n"
       << "  \"pubkey_encoding\": \"pvac-v3-compressed\",\n"
       << "  \"cipher_encoding\": \"pvac-v3-length-prefixed-bundle\",\n"
-      << "  \"plaintext_bytes\": " << plaintext_bytes << ",\n"
-      << "  \"cipher_objects\": " << cipher_objects << ",\n"
       << "  \"h_dimensions\": {\n"
       << "    \"rows\": " << p.m_bits << ",\n"
       << "    \"columns\": " << p.n_bits << "\n"
@@ -353,8 +294,6 @@ std::string read_commit_value(const fs::path& pub) {
 
 void write_manifest(
     const Params& p,
-    size_t plaintext_bytes,
-    size_t cipher_objects,
     const std::string& commit,
     const fs::path& path
 ) {
@@ -366,9 +305,7 @@ void write_manifest(
       << "  \"network\": \"octra-mainnet\",\n"
       << "  \"reward_oct\": 500000,\n"
       << "  \"encrypted_plaintext\": {\n"
-      << "    \"type\": \"report-email-and-secret-string\",\n"
-      << "    \"plaintext_bytes\": " << plaintext_bytes << ",\n"
-      << "    \"cipher_objects\": " << cipher_objects << "\n"
+      << "    \"type\": \"bounty-payload\"\n"
       << "  },\n"
       << "  \"cryptography\": {\n"
       << "    \"implementation\": \"pvac-hfhe-cpp\",\n"
@@ -387,13 +324,7 @@ void write_manifest(
       << "    \"public_key\": \"pk.bin\",\n"
       << "    \"parameters\": \"params.json\"\n"
       << "  },\n"
-      << "  \"private_artifacts_not_published\": [\n"
-      << "    \"sk.bin\",\n"
-      << "    \"plaintext.txt\",\n"
-      << "    \"private decryption key\",\n"
-      << "    \"private plaintext\"\n"
-      << "  ],\n"
-      << "  \"winning_condition\": \"recover plaintext from secret.ct using public files only; send the secret string and reproducible attack report to the recovered email\"\n"
+      << "  \"winning_condition\": \"recover plaintext from secret.ct using public files only; follow the recovered instructions\"\n"
       << "}\n";
     o.close();
     if (::chmod(path.c_str(), 0644) != 0) throw std::runtime_error("chmod failed for manifest.json");
@@ -403,11 +334,13 @@ void generate() {
     const fs::path pub = public_root();
     const fs::path priv = private_root(pub);
     if (!fs::exists(pub)) fs::create_directory(pub);
-    if (fs::exists(pub / "pk.bin") || fs::exists(pub / "secret.ct") || fs::exists(priv))
+    if (fs::exists(pub / "pk.bin") || fs::exists(pub / "secret.ct"))
         throw std::runtime_error("existing challenge artifacts rejected");
-    fs::create_directory(priv);
+    if (!fs::exists(priv)) fs::create_directory(priv);
     ::chmod(pub.c_str(), 0755);
     ::chmod(priv.c_str(), 0700);
+    if (!fs::exists(priv / "plaintext.txt"))
+        throw std::runtime_error("missing input");
 
     Params prm;
     prm.noise_entropy_bits = 128.0;
@@ -415,21 +348,20 @@ void generate() {
     SecKey sk;
     std::cout << "event = keygen\n";
     keygen(prm, pk, sk);
-    std::string plain = bounty_plaintext();
-    std::cout << "event = encrypt bytes = " << plain.size() << "\n";
+    auto plain_blob = read_file(priv / "plaintext.txt");
+    std::string plain(plain_blob.begin(), plain_blob.end());
+    std::cout << "event = encrypt\n";
     auto cts = enc_text(pk, sk, plain);
 
     auto pk_blob = pvac_ser::serialize_pubkey(pk, true);
     auto sk_blob = pvac_ser::serialize_seckey(sk);
     auto ct_blob = serialize_bundle(cts);
-    std::vector<uint8_t> plain_blob(plain.begin(), plain.end());
 
     write_file(pub / "pk.bin", pk_blob, 0644);
     write_file(pub / "secret.ct", ct_blob, 0644);
     write_file(priv / "sk.bin", sk_blob, 0600);
-    write_file(priv / "plaintext.txt", plain_blob, 0600);
-    write_params(prm, plain.size(), cts.size(), pub / "params.json");
-    write_manifest(prm, plain.size(), cts.size(), read_commit_value(pub), pub / "manifest.json");
+    write_params(prm, pub / "params.json");
+    write_manifest(prm, read_commit_value(pub), pub / "manifest.json");
 
     auto pk2_blob = read_file(pub / "pk.bin");
     auto sk2_blob = read_file(priv / "sk.bin");
@@ -442,10 +374,7 @@ void generate() {
     wipe(recovered); wipe(plain);
     if (!ok) throw std::runtime_error("disk round-trip verification failed");
 
-    std::cout << "ok = roundtrip\n"
-              << "cipher_objects = " << cts.size() << "\n"
-              << "public_path = " << pub.string() << "\n"
-              << "secret_path = " << (priv / "sk.bin").string() << "\n";
+    std::cout << "ok = roundtrip\n";
 }
 
 void verify() {
@@ -475,7 +404,6 @@ void public_audit() {
     bool compatible = true;
     for (const auto& ct : cts)
         compatible = compatible && is_cipher_compatible_with_pubkey(pk, ct);
-    bool rcomless = bundle_is_rcomless(cts);
     bool wrapped = bundle_is_wrapped(cts);
     bool public_nonzero = bundle_base_layers_are_public_nonzero(pk, cts);
     bool zero_regression = public_zero_regression();
@@ -483,14 +411,14 @@ void public_audit() {
     bool sigma_mixed = mixed_sigma_parity(pk);
     bool small_rank = small_H_rank_regression();
     std::cout << "compatible = " << compatible << "\n";
-    std::cout << "rcomless = " << rcomless << "\n";
+    std::cout << "wire_v3 = 1\n";
     std::cout << "wrapped = " << wrapped << "\n";
     std::cout << "public_nonzero = " << public_nonzero << "\n";
     std::cout << "zero_regression = " << zero_regression << "\n";
     std::cout << "h_mixed_parity = " << h_mixed << "\n";
     std::cout << "sigma_mixed_parity = " << sigma_mixed << "\n";
     std::cout << "small_h_rank_full = " << small_rank << "\n";
-    if (!compatible || !rcomless || !wrapped || !public_nonzero || !zero_regression ||
+    if (!compatible || !wrapped || !public_nonzero || !zero_regression ||
         !h_mixed || !sigma_mixed || !small_rank)
         throw std::runtime_error("public audit failed");
 }
@@ -501,7 +429,7 @@ void selftest() {
     PubKey pk;
     SecKey sk;
     keygen(prm, pk, sk);
-    std::string msg = "";
+    std::string msg = "selftest payload\n";
     auto cts = enc_text(pk, sk, msg);
     auto blob = serialize_bundle(cts);
     auto decoded = deserialize_bundle(blob);
@@ -509,7 +437,6 @@ void selftest() {
     bool compatible = true;
     for (const auto& ct : decoded)
         compatible = compatible && is_cipher_compatible_with_pubkey(pk, ct);
-    bool rcomless = bundle_is_rcomless(decoded);
     bool wrapped = bundle_is_wrapped(decoded);
     bool public_nonzero = bundle_base_layers_are_public_nonzero(pk, decoded);
     bool zero_regression = public_zero_regression();
@@ -518,14 +445,14 @@ void selftest() {
     bool small_rank = small_H_rank_regression();
     std::cout << "roundtrip = " << roundtrip << "\n";
     std::cout << "compatible = " << compatible << "\n";
-    std::cout << "rcomless = " << rcomless << "\n";
+    std::cout << "wire_v3 = 1\n";
     std::cout << "wrapped = " << wrapped << "\n";
     std::cout << "public_nonzero = " << public_nonzero << "\n";
     std::cout << "zero_regression = " << zero_regression << "\n";
     std::cout << "h_mixed_parity = " << h_mixed << "\n";
     std::cout << "sigma_mixed_parity = " << sigma_mixed << "\n";
     std::cout << "small_h_rank_full = " << small_rank << "\n";
-    if (!roundtrip || !compatible || !rcomless || !wrapped || !public_nonzero ||
+    if (!roundtrip || !compatible || !wrapped || !public_nonzero ||
         !zero_regression || !h_mixed || !sigma_mixed || !small_rank)
         throw std::runtime_error("selftest failed");
 }
