@@ -1,7 +1,9 @@
-HFHE Challenge v2
+# HFHE Challenge v2
 This is the second version of the bounty challenge, the first having been cancelled due to configuration issues.
 
-The entire task boils down to attempting to recover or crack the plaintext encryption path using the provided binary artifact—`secret.ct`. This file contains a private key and metadata associated with the address `octC5eR9pLGKbpzTbDgHowkFt8HW7LZYb2gzehzxHamxuAZ`. That is all the information provided (a web client can be used to access the wallet).
+The entire task boils down to attempting to recover or crack the plaintext encryption path using the provided binary artifact -`secret.ct`. This file contains a private key and metadata associated with the address `octC5eR9pLGKbpzTbDgHowkFt8HW7LZYb2gzehzxHamxuAZ`. 
+
+That is all the information provided (a web client can be used to access the wallet).
 
 The rest of the bounty package remains unchanged:
 - manifest.json
