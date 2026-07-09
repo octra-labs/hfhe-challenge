@@ -1,11 +1,15 @@
 {
-  "format": "octra-hfhe-seed-challenge-v1",
-  "text_encoding": "length-cipher-plus-15-byte-blocks",
-  "pubkey_encoding": "pvac-v2-compressed",
-  "cipher_encoding": "pvac-v2-length-prefixed-bundle",
-  "plaintext_bytes": 79,
-  "cipher_objects": 7,
-  "B": 337,
+  "format": "octra-hfhe-bounty-v2",
+  "text_encoding": "length-cipher-plus-wrapped-15-byte-blocks",
+  "pubkey_encoding": "pvac-v3-compressed",
+  "cipher_encoding": "pvac-v3-length-prefixed-bundle",
+  "plaintext_bytes": 110,
+  "cipher_objects": 9,
+  "h_dimensions": {
+    "rows": 8192,
+    "columns": 16384
+  },
+  "b": 337,
   "m_bits": 8192,
   "n_bits": 16384,
   "h_col_wt": 192,

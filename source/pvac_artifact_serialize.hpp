@@ -12,7 +12,8 @@ namespace pvac_ser {
 static constexpr uint8_t MAGIC[4] = {'P', 'V', 'A', 'C'};
 static constexpr uint8_t VERSION_V1 = 0x01;
 static constexpr uint8_t VERSION_V2 = 0x02;
-static constexpr uint8_t VERSION = VERSION_V2;
+static constexpr uint8_t VERSION_V3 = 0x03;
+static constexpr uint8_t VERSION = VERSION_V3;
 static constexpr uint8_t TAG_CIPHER = 0;
 static constexpr uint8_t TAG_PUBKEY = 1;
 static constexpr uint8_t TAG_SECKEY = 2;
@@ -203,7 +204,7 @@ struct Reader {
         if (std::memcmp(m, MAGIC, 4) != 0) { fail("pvac_ser: bad magic"); return 0; }
         uint8_t ver = u8();
         if (failed) return 0;
-        if (ver != VERSION_V1 && ver != VERSION_V2) { fail("pvac_ser: bad version"); return 0; }
+        if (ver != VERSION_V1 && ver != VERSION_V2 && ver != VERSION_V3) { fail("pvac_ser: bad version"); return 0; }
         uint8_t tag = u8();
         if (failed) return 0;
         if (tag != expected_tag) { fail("pvac_ser: wrong type tag"); return 0; }
@@ -269,12 +270,14 @@ inline void write_params(Writer& w, const pvac::Params& prm) {
     w.i32(prm.lpn_t);
     w.i32(prm.lpn_tau_num);
     w.i32(prm.lpn_tau_den);
-    w.f64(prm.recrypt_lo);
-    w.f64(prm.recrypt_hi);
-    w.i32(prm.recrypt_rounds);
+    if (VERSION < VERSION_V3) {
+        w.f64(prm.recrypt_lo);
+        w.f64(prm.recrypt_hi);
+        w.i32(prm.recrypt_rounds);
+    }
 }
 
-inline pvac::Params read_params(Reader& r) {
+inline pvac::Params read_params(Reader& r, uint8_t ver) {
     pvac::Params prm;
     prm.B = r.i32();
     prm.m_bits = r.i32();
@@ -290,9 +293,11 @@ inline pvac::Params read_params(Reader& r) {
     prm.lpn_t = r.i32();
     prm.lpn_tau_num = r.i32();
     prm.lpn_tau_den = r.i32();
-    prm.recrypt_lo = r.f64();
-    prm.recrypt_hi = r.f64();
-    prm.recrypt_rounds = r.i32();
+    if (ver < VERSION_V3) {
+        prm.recrypt_lo = r.f64();
+        prm.recrypt_hi = r.f64();
+        prm.recrypt_rounds = r.i32();
+    }
     return prm;
 }
 
@@ -307,7 +312,8 @@ inline void write_layer(Writer& w, const pvac::Layer& L) {
         w.u32(L.pb);
     }
 
-    w.raw(L.R_com.data(), 32);
+    if (VERSION < VERSION_V3)
+        w.raw(L.R_com.data(), 32);
 
     w.u64(L.PC.size());
     for (const auto& pc : L.PC)
@@ -326,7 +332,8 @@ inline pvac::Layer read_layer(Reader& r, uint8_t ver = VERSION_V2) {
         L.pb = r.u32();
     }
 
-    r.raw(L.R_com.data(), 32);
+    if (ver < VERSION_V3)
+        r.raw(L.R_com.data(), 32);
 
     if (ver >= VERSION_V2) {
         size_t nPC = r.u64();
@@ -436,10 +443,10 @@ inline std::vector<uint8_t> serialize_pubkey(const pvac::PubKey& pk, bool compre
 
 inline pvac::PubKey deserialize_pubkey_raw(const uint8_t* data, size_t len) {
     Reader r(data, len);
-    r.header(TAG_PUBKEY);
+    uint8_t ver = r.header(TAG_PUBKEY);
     pvac::PubKey pk;
     if (r.failed) throw std::runtime_error(r.error);
-    pk.prm = read_params(r);
+    pk.prm = read_params(r, ver);
     pk.canon_tag = r.u64();
 
     size_t nH = r.u64();
@@ -496,8 +503,9 @@ inline std::vector<uint8_t> serialize_seckey(const pvac::SecKey& sk) {
 
 inline pvac::SecKey deserialize_seckey(const uint8_t* data, size_t len) {
     Reader r(data, len);
-    r.header(TAG_SECKEY);
+    uint8_t ver = r.header(TAG_SECKEY);
     pvac::SecKey sk;
+    (void)ver;
     if (r.failed) throw std::runtime_error(r.error);
     for (int i = 0; i < 4; ++i) sk.prf_k[i] = r.u64();
     size_t ns = r.u64();
