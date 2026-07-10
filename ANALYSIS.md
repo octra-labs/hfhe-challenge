@@ -119,6 +119,33 @@ break to date (2026-07-07) is the v1 R_com attack against a different wallet; th
 target `octC5eR9pLGKbpzTbDgHowkFt8HW7LZYb2gzehzxHamxuAZ` remains unsolved and, absent
 a new implementation flaw in the generation path, is not recoverable ciphertext-only.
 
+## Empirical known-plaintext distinguisher (null result)
+
+`tools/distinguish.cpp` keygens a fresh key, then encrypts N blocks of a *known*
+value `v=0` and N of a known nonzero value, round-trips them through the wire
+serializer (as the real artifact is), and compares every public statistic:
+`u01(T0)`, `u01(T1)`, `u01(T0+T1)`, `u01(T0*T1)`, edge count, and a public
+zero-sum test. Result (N=300):
+
+```
+v=0    : meanU(T0)=0.4999 meanU(T1)=0.5038 meanU(T0+T1)=0.5204 avgEdges=47.3 zeroSum=0
+v=known: meanU(T0)=0.4895 meanU(T1)=0.4754 meanU(T0+T1)=0.4715 avgEdges=47.4 zeroSum=0
+```
+
+All statistics coincide within sampling error (~0.017); edge count depends only on
+depth; there is no public zero-detection. With full ground truth, no distinguisher
+exists -- confirming the value is not leaked by any first/second-order public statistic.
+
+## The final hardening commit
+
+The pinned commit `071b0e9` ("public matrix sampling") is the tip of `main` -- the
+challenge runs the latest code, so there is no post-hoc fix to mine. That commit
+adds `mixed_weight()` parity mixing to `gen_H`/`sigma_from_H` and a
+`test_public_linear_invariants` test. Both harden the **sigma / H-syndrome decoy**
+(mixed column parity + full GF(2) rank so sigma's parity is not a fixed linear leak)
+-- i.e. recrypt-soundness hardening, not value hiding. It does not touch the
+multiplicative mask that protects the plaintext.
+
 ## Reproduce
 
 ```
