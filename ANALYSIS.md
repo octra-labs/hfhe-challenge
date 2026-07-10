@@ -64,10 +64,66 @@ hiding Pedersen commitment to `R^{-1}`, `sigma` are random `H`-syndromes, `c0 = 
 | Statistical bias in `R` / weights | **No** — `R = r1*r2*r3` (hash-to-field), `w` uniform; no observed bias. |
 | LPN cryptanalysis of the mask PRF | Reduces to LPN `n=4096, tau=1/8`, **but the LPN samples are never exposed** — no syndrome equations to feed a solver. |
 
+## Why the v1 attack is dead in v2 (two independent proofs)
+
+The published v1 break (Iamknownasfesal, wallet `oct6Y7j...`) needed two things:
+1. a **candidate-checkable oracle** `R_com = SHA256(dom||canon_tag||ztag||nonce||1||R)`
+   whose only non-public input is `R`; and
+2. **single-layer** blocks `T = plaintext_block * R`, so a guessed `x` yields a
+   candidate `R = T*x^{-1}` that the oracle confirms.
+
+v2 removes both:
+
+- `R_com` is computed in `synth` but **not serialized** (`write_layer` writes only
+  `seed` and `PC`). No hash oracle remains.
+- Each block is **wrapped**: `T0 = (v+m)*R0`, `T1 = (-m)*R1` with independent
+  masks and a fresh uniform `m`.
+
+**Candidate-verification is now impossible.** For any guessed block value `v`, choose
+*any* `m`; then `R0 = T0*(v+m)^{-1}` and `R1 = -T1*m^{-1}` are always consistent.
+Every `v` fits the public data equally well => no BIP39/format/dictionary pruning
+can work, because there is no public function of a guess to check. (This is the same
+reason the pair `(T0,T1)` perfectly hides `v`.)
+
+**The wrapped fusion does not leak like bounty2.** Bounty2's homomorphic-addition
+leak required the addends to share mask structure so noise did not cover the sum.
+Here the two fused layers have independent masks `R0 != R1` (verified: all 44 layers
+in `secret.ct` have distinct seeds; 0 native-source layers), so
+`T0 + T1 = (v+m)R0 - m R1` never collapses to a function of `v` alone.
+
+## Full attack enumeration (all closed at `071b0e9`)
+
+1. R_com hash oracle (v1) - removed from wire.
+2. Weak/seedable RNG - no; `getrandom()`.
+3. `pk` leaks `sk` - no; `keygen()` samples independently.
+4. Native-source alt-mask (`ru_r_slots`, only `prf_k`) - 0 present; rejected by `dec_text`.
+5. Pedersen `PC` leaks `R^{-1}` - no; blinding `rho` depends on secret `prf_k`, perfectly hiding.
+6. `sigma` leaks plaintext - no; `H*x xor e` with random per-edge salt, ignored at decrypt.
+7. Edge positions/counts - only depth/length metadata, value-independent.
+8. Algebraic mask cancellation (ratios) - no edge weight is a known multiple of `R`.
+9. Statistical bias/clustering in `w` - no; `w = R*uniform` is uniform.
+10. Wrapped-pair addition leak (bounty2 style) - no; independent masks.
+11. Candidate verification via BIP39/format - impossible; every `v` consistent.
+12. LPN cryptanalysis - samples never exposed; no syndrome equations available.
+13. Cross-cipher mask reuse - no; all seeds distinct (verified).
+14. Subgroup structure of `g` (order 337) - multiplicative only; no linear leverage.
+
 ## Bottom line
 
 Recovering the plaintext from public files reduces to inverting the LPN-based mask
 PRF (recover `sk.lpn_s_bits` / `sk.prf_k`), and the LPN instance is used purely as
 an internal PRF whose per-call outputs are never observable. No oracle, bias,
 weak-RNG, algebraic linearity, or `pk`->`sk` leak was found. v2 closes the v1 hole
-and the residual construction is sound under its LPN/PRF assumptions.
+and the residual construction is sound under its LPN/PRF assumptions. The only public
+break to date (2026-07-07) is the v1 R_com attack against a different wallet; the v2
+target `octC5eR9pLGKbpzTbDgHowkFt8HW7LZYb2gzehzxHamxuAZ` remains unsolved and, absent
+a new implementation flaw in the generation path, is not recoverable ciphertext-only.
+
+## Reproduce
+
+```
+# from repo root, with pvac_hfhe_cpp @ 071b0e9 checked out beside source/
+g++ -std=c++17 -O2 -march=native \
+    -Ipvac_hfhe_cpp/include -Isource tools/probe.cpp -o probe
+./probe .     # prints per-layer T_L = target_L * R_L for all 22 ciphers
+```
