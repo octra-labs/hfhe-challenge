@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HFHE Challenge v2: Security Analysis</title>
+<style>
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 2.5rem 1.2rem 5rem;
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #111;
+    background: #fff;
+  }
+  h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 0.3rem; }
+  h2 { font-size: 1.2rem; margin: 2.2rem 0 0.6rem; border-bottom: 1px solid #ddd; padding-bottom: 0.3rem; }
+  h3 { font-size: 1rem; margin: 1.4rem 0 0.4rem; }
+  p, li { margin: 0.6rem 0; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; }
+  code { background: #f4f4f4; padding: 0.1em 0.3em; border-radius: 3px; }
+  pre { background: #f4f4f4; padding: 0.9rem 1rem; border-radius: 5px; overflow-x: auto; line-height: 1.45; }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 0.8rem 0; font-size: 0.92rem; display: block; overflow-x: auto; }
+  th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #e2e2e2; vertical-align: top; }
+  th { font-weight: 600; }
+  a { color: #06c; }
+  .sub { color: #555; font-size: 0.95rem; margin-top: 0; }
+  hr { border: none; border-top: 1px solid #ddd; margin: 2rem 0; }
+  blockquote { margin: 0.8rem 0; padding: 0.4rem 0 0.4rem 0.9rem; border-left: 3px solid #ccc; color: #333; }
+</style>
+</head>
+<body>
+
+<h1>Octra HFHE Challenge v2: Security Analysis</h1>
+<p class="sub">Independent audit of <code>pvac_hfhe_cpp</code> at commit <code>071b0e9</code>, the exact code that produced <code>secret.ct</code> for <code>octC5eR9pLGKbpzTbDgHowkFt8HW7LZYb2gzehzxHamxuAZ</code>.</p>
+
+<h2>Summary</h2>
+<p>The v2 artifact does not appear to be recoverable from the public files alone. The single published break (v1, a different wallet) used an <code>R_com</code> commitment that acted as an offline guess checker. v2 removes that commitment from the wire and wraps every block with two independent masks, which removes the ability to verify a plaintext guess at all.</p>
+<p>This page documents the scheme, the one public value that depends on the plaintext, and every attack path checked so far, including the LPN direction.</p>
+
+<h2>The scheme in one page</h2>
+<ul>
+  <li>Field <code>F_p</code>, <code>p = 2^127 - 1</code>. A basis <code>g^i</code> for <code>i in [0, B)</code>, <code>B = 337</code>, where <code>g</code> has order 337.</li>
+  <li>A value <code>v</code> is stored as a set of edges. Each edge is <code>(layer_id, idx, sign, w, sigma)</code>. The weight <code>w</code> is a field element. The syndrome <code>sigma = H*x xor e</code> is only used by the proof system and is ignored during decryption.</li>
+  <li>Decryption: <code>v = c0 + sum(sign * w * g^idx * R_inv[layer])</code>.</li>
+  <li><code>R[layer]</code> is a secret multiplicative mask, <code>R = prf_R(sk, seed) = r1 * r2 * r3</code>, each <code>r_i</code> a Toeplitz compression of an LPN syndrome under the secret key.</li>
+  <li>Text is split into 15 byte blocks (<code>utils/text.hpp</code>). Cipher 0 holds the byte length. Ciphers 1..k hold the blocks. <code>secret.ct</code> has 22 ciphers, so 1 length plus 21 blocks, up to 315 bytes.</li>
+  <li>v2 wrapping: each block is <code>fuse(Enc(v+m), Enc(-m))</code> with a fresh uniform <code>m</code> and two independent base layers, so two independent masks <code>R0</code> and <code>R1</code>.</li>
+</ul>
+
+<h2>The only public quantity that depends on the plaintext</h2>
+<p>Every edge weight has the form <code>w = R * c</code>. Summing a layer gives a value anyone can compute:</p>
+<pre><code>T_L = sum(sign * w * g^idx) = target_L * R_L</code></pre>
+<p>For a wrapped block that is <code>T0 = (v + m) * R0</code> and <code>T1 = (-m) * R1</code>. The masks and <code>m</code> come from <code>getrandom</code> and are independent and uniform, so the pair <code>(T0, T1)</code> is uniform over the field regardless of <code>v</code>. This is information theoretic hiding, not just computational hardness.</p>
+
+<h2>Why the v1 attack is dead in v2</h2>
+<h3>Candidate verification is impossible</h3>
+<p>For any guessed block value <code>v</code>, pick any <code>m</code>. Then <code>R0 = T0 / (v + m)</code> and <code>R1 = -T1 / m</code> are always consistent. Every candidate fits the public data equally well, so a BIP39 wordlist, a checksum, or a JSON shape cannot prune anything. There is no public function of a guess to test. v1 could test guesses only because <code>R_com</code> was a hash of all public inputs plus <code>R</code>, and that hash is not serialized in v2.</p>
+<h3>The wrapped pair does not add-leak</h3>
+<p>The earlier bounty2 leak needed the two addends to share mask structure. Here the two fused layers use independent masks. All 44 layers in <code>secret.ct</code> carry distinct seeds and 0 are native source layers, verified with the probe tool. So <code>T0 + T1</code> never collapses into a function of <code>v</code> alone.</p>
+
+<h2>Attack surfaces checked, all closed at 071b0e9</h2>
+<table>
+  <tr><th>Avenue</th><th>Result</th></tr>
+  <tr><td>R_com oracle (v1)</td><td>Computed but not serialized by <code>write_layer</code></td></tr>
+  <tr><td>Weak or seedable RNG</td><td>Masks, m, coefficients all from <code>getrandom()</code></td></tr>
+  <tr><td>pk leaks sk</td><td><code>keygen()</code> samples sk independently of pk</td></tr>
+  <tr><td>Native source alt mask</td><td>0 present, and <code>dec_text</code> rejects it</td></tr>
+  <tr><td>Pedersen PC leaks R inverse</td><td>Blinding derived from secret prf_k, hiding</td></tr>
+  <tr><td>sigma or parity leakage</td><td><code>H*x xor e</code>, random, ignored at decrypt</td></tr>
+  <tr><td>Ratio or projection to cancel R</td><td>No edge weight is a known multiple of R</td></tr>
+  <tr><td>Weight clustering or bias</td><td><code>w = R * uniform</code> is uniform</td></tr>
+  <tr><td>Wrapped pair addition (bounty2 style)</td><td>Independent masks R0 not equal R1</td></tr>
+  <tr><td>Cross cipher mask reuse</td><td>All 44 seeds distinct, verified</td></tr>
+  <tr><td>Subgroup structure of g (order 337)</td><td>Multiplicative only, no linear leverage</td></tr>
+</table>
+
+<h2>Empirical known plaintext test</h2>
+<p>A distinguisher encrypts many blocks of <code>v = 0</code> and many of a known nonzero value, round trips them through the wire format, and compares every public statistic. Result at N = 300:</p>
+<pre><code>v=0    : meanU(T0)=0.4999 meanU(T1)=0.5038 meanU(T0+T1)=0.5204 avgEdges=47.3 zeroSum=0
+v=known: meanU(T0)=0.4895 meanU(T1)=0.4754 meanU(T0+T1)=0.4715 avgEdges=47.4 zeroSum=0</code></pre>
+<p>All statistics agree within sampling error. Edge count depends only on depth. There is no public zero test. With full ground truth, no distinguisher separates the two classes.</p>
+
+<h2>The LPN direction</h2>
+<p>The mask is <code>R = r1 * r2 * r3</code>, each <code>r_i</code> a Toeplitz compression of an LPN syndrome <code>y = A*s xor e</code> with secret dimension <code>k = 4096</code> and noise <code>tau = 1/8</code>.</p>
+<h3>No observable instance</h3>
+<p>An LPN solver needs the pairs <code>(A_r, y_r)</code>. Both are secret here. The row generator <code>A</code> is an AES-CTR stream keyed by the secret <code>sk.prf_k</code>. The syndrome <code>y</code> is folded into <code>R</code> through a secret Toeplitz key and never serialized. <code>R</code> itself is never public, only <code>T = v * R</code> is. Exposed LPN equations: zero. The instance is used purely as a PRF, so no solver can even be constructed.</p>
+<h3>Infeasible even if exposed</h3>
+<pre><code>Gauss / ISD (needs k noise-free rows)   about 2^789
+BKW ballpark (k / log2 k)               about 2^341
+best known asymptotic exponents         above 2^128 for k >= 512, tau = 1/8</code></pre>
+
+<h2>Reproduce</h2>
+<pre><code>g++ -std=c++17 -O2 -march=native \
+    -Ipvac_hfhe_cpp/include -Isource tools/probe.cpp -o probe
+./probe .                     # per layer T_L = target * R for all 22 ciphers
+python3 tools/lpn_estimate.py # LPN hardness plus the zero data blocker
+python3 tools/lpn_demo.py     # ISD works when A and y are exposed (toy k=20)</code></pre>
+
+<h2>Note</h2>
+<p>No plaintext is claimed or fabricated. Submitting an unverified phrase would forfeit the one credible attempt. This is a reproducible negative result, not a recovery.</p>
+
+<hr>
+<p>Sources:
+<a href="https://docs.octra.org/technology/hfhe">HFHE docs</a>,
+<a href="https://github.com/octra-labs/pvac_hfhe_cpp">pvac_hfhe_cpp</a>,
+<a href="https://github.com/Iamknownasfesal/octra-hfhe-challenge-recovery">v1 recovery for a different wallet</a>.
+Full audit and tooling in <code>ANALYSIS.md</code> and <code>LPN_ANALYSIS.md</code>.</p>
+
+</body>
+</html>
