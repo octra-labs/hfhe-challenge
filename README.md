@@ -17,3 +17,15 @@ The rest of the bounty package remains unchanged:
 - `source/pvac_artifact_serialize.hpp`
 
 The ciphertext was generated using an updated version of `pvac_hfhe_cpp`, pinned to commit `071b0e9`. It is recommended to use this specific version when reproducing the artifact format or testing attacks.
+
+# updated (july 11)
+
+At the request of the majority, we are providing specific LPN artifacts bound to the live challenge ciphertext.
+
+- `lpn_samples`
+
+The task is clear now: recover `S` from `y = <A, S> xor e`, with `tau = 1/8` and `n = 4096`.
+
+A tool has also been added to validate the binding of LPN artifacts to `secret.ct`.
+
+- `source/tools/verify_lpn_sample_binding.cpp`
