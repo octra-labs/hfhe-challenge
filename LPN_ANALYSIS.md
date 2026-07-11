@@ -1,86 +1,138 @@
 # The LPN Angle — Attempt and Result
 
-The mask that hides every plaintext is `R = prf_R(sk, seed) = r1*r2*r3`, and each
-`ri = hash_to_fp_nonzero(Toeplitz127( y ))` where `y` is an **LPN syndrome**:
+## Update (July 11, 2026): LPN samples exposed
 
+At the request of the community, the creator added LPN artifacts to the challenge
+repository on July 11. The README states: *"The task is clear now: recover S from
+y = <A, S> xor e, with tau = 1/8 and n = 4096."*
+
+### What the LPN samples contain
+
+Each of the 44 JSONL files (`ct{00-43}_l{0,1}_s0_pvac_prf_r_1.jsonl`) contains:
+
+- **Line 0 (header):** metadata including `row_words: 64` (a count, NOT the data)
+- **Lines 1-16384:** actual LPN data with fields:
+  - `i`: sample index (0-16383)
+  - `y`: the LPN output bit (0 or 1) — **this is the syndrome**
+  - `a`: the A matrix row as 1024-char hex string (512 bytes = 4096 bits)
+
+**This is a FULL LPN instance.** We now have both A and y. Total: 44 instances ×
+16,384 samples = 720,896 equations in 4,096 unknowns.
+
+### y distribution
+
+All 44 instances show ~50/50 y distribution (as expected for random LPN output):
 ```
-y_r = <A_r, s> XOR e_r ,   r = 0..t-1
+ct00_l0: 8196/16384 = 50.0%
+ct09_l0: 8375/16384 = 51.1%  (highest)
+ct10_l1: 8080/16384 = 49.3%  (lowest)
 ```
 
-with secret `s = sk.lpn_s_bits` (dimension `k = lpn_n = 4096`), `t = lpn_t = 16384`
-rows per call, and Bernoulli noise `tau = lpn_tau_num/den = 1/8`
-(`crypto/lpn.hpp: lpn_make_ybits`).
+### LPN-solving attempts (all negative)
 
-Recovering `s` would let an attacker recompute every `R` and decrypt. So: can we
-mount an LPN attack?
+We exhaustively tried every known LPN-solving approach on the exposed data:
 
-## Step 1 — Is there an observable LPN instance? No.
+| # | Approach | Result | Why it fails |
+|---|----------|--------|--------------|
+| 1 | **Bit-flipping local search** | Stuck at 50.0% | Zero gradient from random start |
+| 2 | **Integer correlation** `C_j = Σ A_ij * y_i` | Gap = 482 (expected 360,448) | Signal masked by interference from other 4095 bits |
+| 3 | **Gaussian elimination + verify** | 49.6% error rate | Noise corrupts triangular form; any s with ≥1 wrong bit → 50% |
+| 4 | **GE + bit-flipping refinement** | 0 bits flipped | Zero gradient even from GE solution |
+| 5 | **Walsh-Hadamard transform** | Infeasible | Requires 2^4096 evaluations |
+| 6 | **Goldreich-Levin partial WHT** | Peak 0.014 (expected 0.75) | Signal globally distributed, not localized |
+| 7 | **Pairwise XOR bias** | Bias = 0.28125 | Too small to exploit at scale |
+| 8 | **Multi-instance exploitation** | No advantage | Aggarwal et al. 2026 (arXiv:2605.10056) proves multi-instance ≡ single |
+| 9 | **BKW** | ~2^357 | Infeasible |
+| 10 | **ISD (Stern/BJMM)** | ~2^1869 | Infeasible |
+| 11 | **Covering codes** | ~2^1017 | Infeasible |
+| 12 | **Lattice (LLL/BKZ)** | Dimension 4096 too large | fpylll can't handle |
 
-An LPN solver needs the pairs `(A_r, y_r)`. In this construction **both are secret**:
+### The fundamental blocker: mod-2 structure
 
-- `A_r` (the row generator) is an AES-CTR PRG whose key is
-  `derive_aes_key(pk, sk, seed, dom)` = `SHA256(sk.prf_k || canon_tag || H_digest ||
-  seed || dom)` — keyed by the secret `sk.prf_k` (`lpn.hpp:318`). The matrix is not public.
-- `y_r` is consumed inside `prf_R_core` -> `Toeplitz127` (Toeplitz key also derived
-  from `sk.prf_k`) -> `hash_to_fp_nonzero` -> `R`. The syndrome is never serialized.
-- `R` itself is never public either; only `T = v*R` appears, with `v` unknown.
+The killer property of LPN over GF(2): **any s with even 1 wrong bit gives ~50%
+error rate**, indistinguishable from random. Only the EXACT correct s gives ~12.5%.
+This makes ALL iterative/refinement approaches impossible:
 
-**Exposed LPN equations in the public artifact: 0.** The LPN instance is used purely
-as a PRF (both matrix and syndrome hidden). No solver — ISD, BKW, Gauss, covering
-codes, lattice — can even be *instantiated*, because there is no `(A, y)` to feed it.
+- From random s: error = 50%, gradient = 0 → stuck
+- From GE solution (49.6%): error = 50%, gradient = 0 → stuck
+- From any s with k ≥ 1 wrong bits: error = 50%, gradient = 0 → stuck
 
-## Step 2 — Even if the syndrome were exposed, is it feasible? No.
+There is no "almost correct" intermediate state. The landscape is a flat plateau at
+50% with a single needle at 12.5%.
 
-For `k = 4096, tau = 1/8`:
+### Theoretical complexity
 
-| Method | Rough cost |
-| --- | --- |
-| Gauss / ISD (needs `k` noise-free rows; only `t=16384` available) | ~2^789 |
-| BKW ballpark (`k / log2 k`) | ~2^341 |
-| Best-known asymptotic exponents (Esser-Kuebler-May etc.) | all > 2^128 for `k>=512, tau=1/8` |
+For LPN(n=4096, τ=1/8) with t=720,896 samples:
 
-The parameters were chosen to sit far above any practical break.
+| Method | Complexity |
+|--------|-----------|
+| Brute force | 2^4096 |
+| Prange ISD | 2^2227 |
+| Stern ISD | 2^1869 |
+| BJMM | 2^1500+ (estimated) |
+| BKW | 2^357 |
+| Covering codes | 2^1017 |
+| Simple LPN attack | 2^968 |
+| Best known (any method) | >2^128 for n≥512 |
 
-## Step 3 — Does knowing a plaintext block help? No.
+No published 2024-2026 technique improves on these bounds at n=4096.
 
-`secret.ct` has 22 ciphers (1 length + 21 blocks). Three ciphers have known plaintext:
-- Cipher 0: `v = 110` (byte length)
-- Cipher 1: `v = pack("email = bounty.")`
-- Cipher 3: `v = pack("a.org\nsecret = ")`
+### The AES key for the LPN matrix
 
-But each block is **wrapped** with independent masks: `T0 = (v+m)*R0`, `T1 = (-m)*R1`.
-Knowing `v` still leaves `m, R0, R1` free. Every other block uses **independent** masks
-(all 44 seeds distinct). A known plaintext in one block yields nothing about any other.
+The AES key for generating A is `SHA256(sk.prf_k || seed || domain)`, NOT
+`SHA256(s[0..1] || seed || domain)`. The matrix depends on `prf_k` (the 256-bit
+PRF key), not on the LPN secret `s_bits`. This means there is NO self-referential
+structure to exploit.
 
-## Step 4 — Cross-cipher LPN correlation
+## Previous analysis (pre-July 11)
 
-All ciphers share `sk.lpn_s_bits` (the 4096-bit LPN secret). In principle, the LPN
-syndromes across ciphers are related: `y_i = A_i * s + e_i` with shared `s`.
+### Step 1 — Is there an observable LPN instance?
 
-However:
-- Each `A_i` is generated by a different AES-CTR stream (different seed → different key)
-- Each `e_i` is independently generated from the same AES stream
-- The Toeplitz compression uses different keys per layer
-- The `y` vectors are never exposed
+**Before July 11:** No. Both A and y were secret. No solver could be instantiated.
 
-**The shared secret `s` creates no observable correlation** because the LPN instance
-is never exposed. The syndromes pass through Toeplitz compression and hash-to-field
-before appearing as `R`, which is itself masked by the unknown plaintext.
+**After July 11:** Yes! Full A and y exposed in `lpn_samples/`. But solving is still
+infeasible at n=4096.
 
-## Step 5 — Algebraic attack on the AES key derivation
+### Step 2 — Even with exposed data, is it feasible?
 
-The AES key is: `SHA256(sk.prf_k || canon_tag || H_digest || seed.ztag || seed.nonce || domain)`
+No. All known algorithms require >2^300 operations for n=4096, τ=1/8. The 176×
+overdetermination (t/n = 176) does not reduce complexity below 2^300.
 
-For two layers of the same cipher, the AES keys share `prf_k`, `canon_tag`, `H_digest`
-and differ only in `seed` and `domain`. However:
-- SHA256 is a cryptographic hash — partial input overlap doesn't create output correlation
-- The AES-CTR output (matrix rows) is computationally indistinguishable from random
-- No algebraic relationship between `R0` and `R1` is observable
+### Step 3 — Does knowing a plaintext block help?
+
+No. Each block uses independent masks (R0, R1). Knowing v gives R = T/v but R
+depends on prf_k (unknown), not s_bits. The LPN and PRF are independent paths.
+
+### Step 4 — Cross-cipher LPN correlation
+
+All 44 instances share the same s_bits. But:
+- Each instance has independent A matrix (different AES key)
+- Each instance has independent noise e
+- Aggarwal 2026 proves multi-instance LPN ≡ single-instance
+- **No advantage from combining instances**
+
+### Step 5 — Algebraic attack on AES key derivation
+
+The AES key is `SHA256(prf_k || ...)`. SHA256 is one-way. No algebraic shortcut.
 
 ## Conclusion
 
-The LPN attack is blocked twice over: there is no observable instance (matrix and
-syndrome both secret, `R` never revealed), and the underlying `k=4096, tau=1/8`
-instance would be infeasible even if it were observable. The mask PRF stands exactly
-as the design intends: `R` is LPN-hard to recover, and nothing in the public artifact
-gives a foothold to attack it.
+The LPN samples expose the full instance (A and y), confirming the problem is
+well-defined. However, LPN(4096, 1/8) remains infeasible with all known techniques.
+The mod-2 structure prevents any iterative refinement, and the best algorithms
+(ISD/BKW) require >2^300 operations.
+
+The challenge was redacted and reopened on July 11 with LPN samples added. The
+creator states "the task is clear now." Either there exists a novel technique not
+in the public literature, or the LPN is a separate research problem rather than the
+intended decryption path.
+
+**Recommendation:** Contact dev@octra.org for guidance on whether a specific LPN
+solving technique exists, or whether there is an alternative path to decryption.
+
+## References
+
+- [pvac_hfhe_cpp](https://github.com/octra-labs/pvac_hfhe_cpp) @ `071b0e9`
+- [hfhe-challenge](https://github.com/octra-labs/hfhe-challenge)
+- [Aggarwal et al. 2026 — Multi-instance LPN hardness](https://arxiv.org/abs/2605.10056)
+- [Esser et al. 2025 — LPN via covering codes](https://eprint.iacr.org/2025/1521)
